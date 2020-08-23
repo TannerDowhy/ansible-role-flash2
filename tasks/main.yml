@@ -1,0 +1,74 @@
+---
+# tasks file for ansible-role-flash2
+
+- name: Create biolighthouse directory
+  file:
+    path: "{{ base_path }}/{{ item }}"
+    state: directory
+    mode: 0777
+  with_items:
+    - .biolighthouse
+    - .biolighthouse/software
+    - .biolighthouse/bin
+
+################################################################################
+# Done from git repo
+# - name: Clone the FLASH git repository
+#   git:
+#     repo: https://github.com/dstreett/FLASH2.git
+#     dest: "{{ base_path }}/.biolighthouse/software/FLASH2"
+#
+# - name: Make FLASH
+#   command: "make -C {{ base_path }}/.biolighthouse/software/FLASH2"
+#
+# - name: Move FLASH2 binary
+#   file:
+#     src: "{{ base_path }}/.biolighthouse/software/FLASH2/flash2"
+#     path: "{{ base_path }}/.biolighthouse/bin/flash2"
+#     state: hard
+################################################################################
+
+- name: Detect environment
+  set_fact:
+    base_path: "{% if ansible_domain == 'cedar.computecanada.ca' %}{{ ansible_env.HOME }}/scratch{% else %}{{ ansible_env.HOME }}{% endif %}"
+  when: base_path is not defined
+
+- name: Create /tmp directory
+  file:
+    path: /tmp/biol
+    state: directory
+
+- name: Get util files
+  get_url:
+    url: "{{ conda_util_file }}"
+    dest: /tmp/biol/
+
+- name: Set conda executable variable
+  set_fact:
+    conda_executable: "{{ base_path }}/.biolighthouse/software/conda/bin/conda"
+  when: conda_executable is not defined
+
+- name: Create a conda environment
+  conda_create:
+    name: "bl_flash2"
+    executable: "{{ base_path }}/.biolighthouse/software/conda/bin/conda"
+
+- name: Put environment activation in .bashrc
+  lineinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    line: "conda activate bl_flash2"
+
+- name: Install Flash2 via conda
+  conda_install:
+    name: flash2
+    version: "2.2.0"
+    executable: "{{ conda_executable }}"
+    channel: bioconda
+    environment: bl_flash2
+  notify: Remove biol tmp dir
+
+- name: Remove environment activation in .bashrc
+  lineinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    regexp: "^conda activate bl_*"
+    state: absent
